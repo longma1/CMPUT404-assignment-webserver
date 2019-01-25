@@ -1,5 +1,6 @@
 #  coding: utf-8 
 import socketserver
+import os
 
 # Copyright 2013 Abram Hindle, Eddie Antonio Santos
 # 
@@ -28,12 +29,59 @@ import socketserver
 
 
 class MyWebServer(socketserver.BaseRequestHandler):
+    def sort_request(self):
+        request_split = self.data.split(' ')
+        method = request_split[0][2:]
+        requested_file = request_split[1]
+        self.requested_path=requested_file
     
-    def handle(self):
-        self.data = self.request.recv(1024).strip()
-        print ("Got a request of: %s\n" % self.data)
-        self.request.sendall(bytearray("OK",'utf-8'))
+        if method=="GET":
+            return True
+        else:
+            return False
 
+    def check_path(self):
+        if '/../' in self.requested_path:
+            return 0
+        elif os.path.isfile('./www'+self.requested_path):
+            self.requested_type=self.requested_path.split('.')[1]
+            return 1
+        
+        elif os.path.isdir('./www'+self.requested_path[:-1]) and self.requested_path[-1:]=="/":
+            return 2
+        elif os.path.isdir('./www'+self.requested_path):
+            return 3
+        else:
+            return 0
+
+        return True
+    def handle(self):
+        self.data = str(self.request.recv(1024).strip())
+        print ("Got a request of: %s\n" % self.data)
+        if not self.sort_request():
+            self.request.sendall(bytearray("HTTP/1.1 405 Method Not Allowed",'utf-8'))
+        requested_status=self.check_path()
+        if requested_status==1:
+            f=open('www'+self.requested_path)
+            data=f.read()
+            status="HTTP/1.1 200 OK\r\nContent-Type: text/{}\r\nContent-Length:{}\r\n\r\n".format(self.requested_type,str(len(data)))
+            self.request.sendall(bytearray(status,'utf-8'))
+            self.request.sendall(bytearray(data,'utf-8'))
+            
+            self.request.close()
+        elif requested_status==2:
+            f=open('www'+self.requested_path+'index.html')
+            data=f.read()
+            self.request.sendall(bytearray("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length:{} \r\n\r\n".format(str(len(data))),'utf-8'))
+            self.request.sendall(bytearray(data,'utf-8'))
+            self.request.close()
+        elif requested_status==3:
+            self.request.sendall(bytearray("HTTP/1.1 301 Moved Permanently\r\nLocation:{}/\r\n\r\n".format(self.requested_path),'utf-8'))
+            self.request.close()
+        elif requested_status==0:
+            self.request.sendall(bytearray("HTTP/1.1 404 Not Found",'utf-8'))
+            self.request.close()
+            
 if __name__ == "__main__":
     HOST, PORT = "localhost", 8080
 
